@@ -17,6 +17,7 @@ import yaml
 from deprecated import deprecated
 from emcee.backends import HDFBackend
 from lymph import diagnosis_times, models, types
+from lymixture import LymphMixture
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
@@ -283,6 +284,36 @@ def create_model(config: dict[str, Any], config_version: int = 0) -> types.Model
     return model
 
 
+@log_state()
+def create_mixture(config: dict[str, Any], config_version: int = 0) -> types.Model:
+    """Create a model instance as defined by a ``config`` dictionary."""
+    if version := config.get("version", config_version) < 1:
+        raise LyScriptsWarning(f"{version=} unsupported", level="error")
+
+    if (graph_config := config.get("graph")) is None:
+        raise LyScriptsWarning("No graph definition found in YAML file", level="error")
+
+    if (model_config := config.get("mixture")) is None:
+        raise LyScriptsWarning("No mixture definition found in YAML file", level="error")
+
+    graph_dict = graph_from_config(graph_config)
+    model_cls_name, _, cls_meth_name = model_config["class"].partition(".")
+    if model_cls_name != 'Unilateral':
+        raise LyScriptsWarning("The mixture model has only been implemented for Unilateral so far", level = "error")
+    model_cls = getattr(models, model_cls_name)
+    model_kwargs = model_config.get("kwargs", {})
+    model_num_components = model_config.get('num_components')
+    model_kwargs['graph'] = graph_dict
+    mixture = LymphMixture(model_cls = model_cls, model_kwargs = model_kwargs, num_components = model_num_components) 
+
+    assign_modalities(model=mixture, config=config.get("modalities", {}))
+
+    for t_stage, dist_config in model_config.get("distributions", {}).items():
+        distribution = create_distribution(dist_config)
+        mixture.set_distribution(t_stage, distribution)
+
+    return mixture
+
 def get_dict_depth(nested: dict) -> int:
     """Get the depth of a nested dictionary.
 
@@ -482,3 +513,7 @@ def make_pattern(
 ) -> dict[str, bool | None]:
     """Create a dictionary from a list of bools and Nones."""
     return dict(zip(lnls, from_list or [None] * len(lnls)))
+
+
+def to_numpy(params: dict[str, float]) -> np.ndarray:
+    return np.array([p for p in params.values()])
