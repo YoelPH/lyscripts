@@ -287,13 +287,13 @@ def create_model(config: dict[str, Any], config_version: int = 0) -> types.Model
 @log_state()
 def create_mixture(config: dict[str, Any], config_version: int = 0) -> types.Model:
     """Create a model instance as defined by a ``config`` dictionary."""
-    if version := config.get("version", config_version) < 1:
+    if version := config.get("version", config_version) < 0:
         raise LyScriptsWarning(f"{version=} unsupported", level="error")
 
     if (graph_config := config.get("graph")) is None:
         raise LyScriptsWarning("No graph definition found in YAML file", level="error")
 
-    if (model_config := config.get("mixture")) is None:
+    if (model_config := config.get("model")) is None:
         raise LyScriptsWarning("No mixture definition found in YAML file", level="error")
 
     graph_dict = graph_from_config(graph_config)
@@ -302,8 +302,10 @@ def create_mixture(config: dict[str, Any], config_version: int = 0) -> types.Mod
         raise LyScriptsWarning("The mixture model has only been implemented for Unilateral so far", level = "error")
     model_cls = getattr(models, model_cls_name)
     model_kwargs = model_config.get("kwargs", {})
+    if not isinstance(model_kwargs,dict):
+        model_kwargs = {}
     model_num_components = model_config.get('num_components')
-    model_kwargs['graph'] = graph_dict
+    model_kwargs['graph_dict'] = graph_dict
     mixture = LymphMixture(model_cls = model_cls, model_kwargs = model_kwargs, num_components = model_num_components) 
 
     assign_modalities(model=mixture, config=config.get("modalities", {}))

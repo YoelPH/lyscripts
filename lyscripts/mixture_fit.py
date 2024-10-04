@@ -55,10 +55,10 @@ def _add_arguments(parser: argparse.ArgumentParser):
         "-i", "--input", type=Path, required=True,
         help="Path to training data files"
     )
-    parser.add_argument(
-        "-o", "--output", type=Path, required=True,
-        help="Path to the HDF5 file to store the results in"
-    )
+    # parser.add_argument(
+    #     "-o", "--output", type=Path, required=True,
+    #     help="Path to the HDF5 file to store the results in"
+    # )
     parser.add_argument(
         "--history", type=Path, nargs="?",
         help="Path to store the burnin history in (as CSV file)."
@@ -113,7 +113,7 @@ def _add_arguments(parser: argparse.ArgumentParser):
 
 MIXTURE = None
 
-def log_prob_fn(theta: np.array) -> float:
+def log_prob_fn() -> float:
     """log probability function using global variables because of pickling."""
     return MIXTURE.likelihood(use_complete = True, given_resps = MIXTURE.get_resps(norm = True))
 
@@ -189,9 +189,9 @@ def main(args: argparse.Namespace) -> None:
     if args.history is not None:
         logger.info(f"Saving history to {args.history}.")
         likelihood_history = pd.DataFrame(likelihood_history).set_index("steps")
-        likelihood_history.to_csv(args.likelihood_history, index=True)
+        likelihood_history.to_csv(args.history_dir + 'llh', index=True)
         params_history = pd.DataFrame(params_history).set_index("steps")
-        params_history.to_csv(args.params_history, index=True)
+        params_history.to_csv(args.history_dir + 'params', index=True)
 
 
 if __name__ == "__main__":
