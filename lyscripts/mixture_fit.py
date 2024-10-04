@@ -132,96 +132,6 @@ def check_convergence(params_history, likelihood_history, steps_back_list, absol
     return False
 
 
-
-def run_burnin(
-    sampler: emcee.EnsembleSampler,
-    burnin: int | None = None,
-    check_interval: int = 100,
-    trust_fac: float = 50.0,
-    rel_thresh: float = 0.05,
-) -> BurninHistory:
-    """Run the burnin phase of the MCMC sampling.
-
-    This will run the sampler for ``burnin`` steps or (if ``burnin`` is `None`) until
-    convergence is reached. The convergence criterion is based on the autocorrelation
-    time of the chain, which is computed every `check_interval` steps. The chain is
-    considered to have converged if the autocorrelation time is smaller than
-    `trust_fac` times the number of iterations and the relative change in the
-    autocorrelation time is smaller than `rel_thresh`.
-
-    The samples of the burnin phase will be stored, such that one can resume a
-    cancelled run. Also, metrics collected during the burnin phase will be returned
-    in a :py:obj:`.BurninHistory` namedtuple. This may be used for plotting and
-    diagnostics.
-    """
-    state = get_starting_state(sampler)
-    history = BurninHistory([], [], [], [])
-    num_accepted = 0
-
-    with Progress(
-        *Progress.get_default_columns(),
-        TimeElapsedColumn(),
-    ) as progress:
-        task = progress.add_task(
-            description="[blue]INFO     [/blue]Burn-in phase ",
-            total=burnin,
-        )
-        while sampler.iteration < (burnin or np.inf):
-            for state in sampler.sample(state, iterations=check_interval):
-                progress.update(task, advance=1)
-
-            new_acor_time = sampler.get_autocorr_time(tol=0).mean()
-            old_acor_time = history.acor_times[-1] if len(history.acor_times) > 0 else np.inf
-
-            new_accept_frac = (
-                (np.sum(sampler.backend.accepted) - num_accepted)
-                / (sampler.nwalkers * check_interval)
-            )
-            num_accepted = np.sum(sampler.backend.accepted)
-
-            history.steps.append(sampler.iteration)
-            history.acor_times.append(new_acor_time)
-            history.accept_fracs.append(new_accept_frac)
-            history.max_log_probs.append(np.max(state.log_prob))
-
-            is_converged = burnin is None
-            is_converged &= new_acor_time * trust_fac < sampler.iteration
-            is_converged &= np.abs(new_acor_time - old_acor_time) / new_acor_time < rel_thresh
-
-            if is_converged:
-                break
-
-    if is_converged:
-        logger.info(f"Converged after {sampler.iteration} steps.")
-    logger.info(f"Acceptance fraction: {sampler.acceptance_fraction.mean():.2%}")
-    return history
-
-
-def run_sampling(
-    sampler: emcee.EnsembleSampler,
-    nsteps: int,
-    thin: int,
-) -> None:
-    """Run the MCMC sampling phase to produce `nsteps` samples.
-
-    This sampling will definitely produce `nsteps` samples, irrespective of the `thin`
-    parameter, which controls how many steps in between two stored samples are skipped.
-    The samples will be stored in the backend of the `sampler`.
-
-    Note that this will reset the `sampler`'s backend, assuming the stored samples are
-    from the burnin phase.
-    """
-    state = get_starting_state(sampler)
-    sampler.backend.reset(sampler.nwalkers, sampler.ndim)
-
-    for _sample in track(
-        sequence=sampler.sample(state, iterations=nsteps * thin, thin=thin, store=True),
-        description="[blue]INFO     [/blue]Sampling phase",
-        total=nsteps * thin,
-    ):
-        continue
-
-
 def run_EM():
     """Run the EM algorithm to determine the optimal parameters.
     """
@@ -278,8 +188,10 @@ def main(args: argparse.Namespace) -> None:
     
     if args.history is not None:
         logger.info(f"Saving history to {args.history}.")
-        burnin_history_df = pd.DataFrame(burnin_history._asdict()).set_index("steps")
-        burnin_history_df.to_csv(args.history, index=True)
+        likelihood_history = pd.DataFrame(likelihood_history).set_index("steps")
+        likelihood_history.to_csv(args.likelihood_history, index=True)
+        params_history = pd.DataFrame(params_history).set_index("steps")
+        params_history.to_csv(args.params_history, index=True)
 
 
 if __name__ == "__main__":
