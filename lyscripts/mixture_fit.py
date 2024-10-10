@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 from lymph import models
 from lymixture import LymphMixture
+from lymixture.em import expectation, maximization
 from rich.progress import Progress, TimeElapsedColumn, track
 
 from lyscripts.utils import (
@@ -137,27 +138,28 @@ def run_EM():
     """
     is_converged = False
     iteration = 0
+    params = MIXTURE.get_params()
     params_history = []
     likelihood_history = []
     params_history.append(params.copy())
-    likelihood_history.append(MIXTURE.likelihood(use_complete=False))
+    likelihood_history.append(MIXTURE.likelihood())
     # Number of steps to look back for convergence
     look_back_steps = 3
 
     while not is_converged:
-        print(iteration)
-        print(likelihood_history[-1])
-        latent = LymphMixture.em.expectation(MIXTURE, params)
-        params = LymphMixture.em.maximization(MIXTURE, latent)
+        print('iteration',iteration)
+        print('likelihood', likelihood_history[-1])
+        latent = expectation(MIXTURE, params)
+        params = maximization(MIXTURE, latent)
         
         # Append current params and likelihood to history
         params_history.append(params.copy())
-        likelihood_history.append(MIXTURE.likelihood(use_complete=False))
+        likelihood_history.append(MIXTURE.likelihood())
         
         # Check if converged
         if iteration >= 3:  # Ensure enough history is available
             is_converged = check_convergence(params_history, likelihood_history,list(range(1,look_back_steps+1)))
-
+        iteration += 1
     return params_history, likelihood_history
 
 def main(args: argparse.Namespace) -> None:
@@ -173,9 +175,9 @@ def main(args: argparse.Namespace) -> None:
     MIXTURE = create_mixture(params)
 
     mapping = params["model"].get("mapping", None)
-    if isinstance(MIXTURE, models.Unilateral):
+    if isinstance(MIXTURE.components[0], models.Unilateral):
         side = params["model"].get("side", "ipsi")
-        MIXTURE.load_patient_data(inference_data, side=side, mapping=mapping)
+        MIXTURE.load_patient_data(inference_data, split_by=params["model"].get("split_by", ("tumor", "1", "subsite")), mapping=mapping)
     else:
         raise "Only Unilateral has been implemented so far"
 

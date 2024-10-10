@@ -308,7 +308,7 @@ def create_mixture(config: dict[str, Any], config_version: int = 0) -> types.Mod
     model_kwargs['graph_dict'] = graph_dict
     mixture = LymphMixture(model_cls = model_cls, model_kwargs = model_kwargs, num_components = model_num_components) 
 
-    assign_modalities(model=mixture, config=config.get("modalities", {}))
+    # assign_modalities(model=mixture, config=config.get("modalities", {}))
 
     for t_stage, dist_config in model_config.get("distributions", {}).items():
         distribution = create_distribution(dist_config)
