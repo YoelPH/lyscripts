@@ -28,6 +28,7 @@ from lyscripts.utils import (
     load_patient_data,
     load_yaml_params,
     to_numpy,
+    assign_modalities
 )
 
 logger = logging.getLogger(__name__)
@@ -62,47 +63,11 @@ def _add_arguments(parser: argparse.ArgumentParser):
     # )
     parser.add_argument(
         "--history", type=Path, nargs="?",
-        help="Path to store the burnin history in (as CSV file)."
-    )
-
-    parser.add_argument(
-        "-w", "--walkers-per-dim", type=int, default=10,
-        help="Number of walkers per dimension",
-    )
-    parser.add_argument(
-        "-b", "--burnin", type=int, nargs="?",
-        help="Number of burnin steps. If not provided, sampler runs until convergence."
-    )
-    parser.add_argument(
-        "--check-interval", type=int, default=100,
-        help="Check convergence every `check_interval` steps."
-    )
-    parser.add_argument(
-        "--trust-fac", type=float, default=50.,
-        help="Factor to trust the autocorrelation time for convergence."
-    )
-    parser.add_argument(
-        "--rel-thresh", type=float, default=0.05,
-        help="Relative threshold for convergence."
-    )
-    parser.add_argument(
-        "-n", "--nsteps", type=int, default=100,
-        help="Number of MCMC samples to draw, irrespective of thinning."
-    )
-    parser.add_argument(
-        "-t", "--thin", type=int, default=10,
-        help="Thinning factor for the MCMC chain."
+        help="Path to store history in (as CSV file)."
     )
     parser.add_argument(
         "-p", "--params", default="./params.yaml", type=Path,
         help="Path to parameter file."
-    )
-    parser.add_argument(
-        "-c", "--cores", type=int, nargs="?",
-        help=(
-            "Number of parallel workers (CPU cores/threads) to use. If not provided, "
-            "it will use all cores. If set to zero, multiprocessing will not be used."
-        )
     )
     parser.add_argument(
         "-s", "--seed", type=int, default=42,
@@ -133,7 +98,7 @@ def check_convergence(params_history, likelihood_history, steps_back_list, absol
     return False
 
 
-def run_EM():
+def run_EM(tolerance):
     """Run the EM algorithm to determine the optimal parameters.
     """
     is_converged = False
@@ -142,7 +107,7 @@ def run_EM():
     params_history = []
     likelihood_history = []
     params_history.append(params.copy())
-    likelihood_history.append(MIXTURE.likelihood())
+    likelihood_history.append(MIXTURE.likelihood(use_complete = False))
     # Number of steps to look back for convergence
     look_back_steps = 3
 
@@ -154,11 +119,11 @@ def run_EM():
         
         # Append current params and likelihood to history
         params_history.append(params.copy())
-        likelihood_history.append(MIXTURE.likelihood())
+        likelihood_history.append(MIXTURE.likelihood(use_complete = False))
         
         # Check if converged
         if iteration >= 3:  # Ensure enough history is available
-            is_converged = check_convergence(params_history, likelihood_history,list(range(1,look_back_steps+1)))
+            is_converged = check_convergence(params_history, likelihood_history,list(range(1,look_back_steps+1)),tolerance)
         iteration += 1
     return params_history, likelihood_history
 
@@ -169,7 +134,6 @@ def main(args: argparse.Namespace) -> None:
 
     params = load_yaml_params(args.params)
     inference_data = load_patient_data(args.input)
-
     # ugly, but necessary for pickling
     global MIXTURE
     MIXTURE = create_mixture(params)
@@ -177,23 +141,25 @@ def main(args: argparse.Namespace) -> None:
     mapping = params["model"].get("mapping", None)
     if isinstance(MIXTURE.components[0], models.Unilateral):
         side = params["model"].get("side", "ipsi")
-        MIXTURE.load_patient_data(inference_data, split_by=params["model"].get("split_by", ("tumor", "1", "subsite")), mapping=mapping)
+        MIXTURE.load_patient_data(inference_data, split_by= params["model"].get("split_by", ("tumor", "1", "subsite")), mapping=mapping)
+        assign_modalities(model=MIXTURE, config=params.get("inference_modalities", {}))
+
     else:
         raise "Only Unilateral has been implemented so far"
-
     # emcee does not support numpy's new random number generator yet.
     rng = np.random.default_rng(params["em"].get("seed", 42))
     starting_values = {k: rng.uniform() for k in MIXTURE.get_params()}
     MIXTURE.set_params(**starting_values)
     MIXTURE.normalize_mixture_coefs()
-    params_history, likelihood_history = run_EM()    
+    tolerance = params['model'].get('lihelihood_tolerance', 0.01)
+    params_history, likelihood_history = run_EM(tolerance = tolerance)    
     
     if args.history is not None:
-        logger.info(f"Saving history to {args.history}.")
-        likelihood_history = pd.DataFrame(likelihood_history).set_index("steps")
-        likelihood_history.to_csv(args.history_dir + 'llh', index=True)
-        params_history = pd.DataFrame(params_history).set_index("steps")
-        params_history.to_csv(args.history_dir + 'params', index=True)
+        logger.info(f"Saving history to {args.history_dir}.")
+        likelihood_history = pd.DataFrame(likelihood_history)
+        likelihood_history.to_csv(args.history_dir + '/llh', index=True)
+        params_history = pd.DataFrame(params_history)
+        params_history.to_csv(args.history_dir + '/params', index=True)
 
 
 if __name__ == "__main__":

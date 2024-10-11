@@ -275,7 +275,7 @@ def create_model(config: dict[str, Any], config_version: int = 0) -> types.Model
     model_kwargs = model_config.get("kwargs", {})
     model = model_cls(graph_dict, **model_kwargs)
 
-    assign_modalities(model=model, config=config.get("modalities", {}))
+    assign_modalities(model=model, config=config.get("inference_modalities", {}))
 
     for t_stage, dist_config in model_config.get("distributions", {}).items():
         distribution = create_distribution(dist_config)
@@ -308,8 +308,8 @@ def create_mixture(config: dict[str, Any], config_version: int = 0) -> types.Mod
     model_kwargs['graph_dict'] = graph_dict
     mixture = LymphMixture(model_cls = model_cls, model_kwargs = model_kwargs, num_components = model_num_components) 
 
-    # assign_modalities(model=mixture, config=config.get("modalities", {}))
-
+    #note: modalities can't be set here, as we need to add the data first to define the number of subgroups
+    
     for t_stage, dist_config in model_config.get("distributions", {}).items():
         distribution = create_distribution(dist_config)
         mixture.set_distribution(t_stage, distribution)
