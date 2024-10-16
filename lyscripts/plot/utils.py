@@ -13,6 +13,7 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
+import math
 
 from lyscripts.decorators import (
     check_input_file_exists,
@@ -407,3 +408,52 @@ def save_figure(
     """Save a ``figure`` to ``output_path`` in every one of the provided ``formats``."""
     for frmt in formats:
         figure.savefig(output_path.with_suffix(f".{frmt}"))
+
+def p_to_xyz(p):
+    #Project 4D representation down to 3D representation
+    s3 = 1/math.sqrt(3.0)
+    s6 = 1/math.sqrt(6.0)
+    x =  -1*p[0] +  1*p[1] +    0*p[2] +    0*p[3]
+    y = -s3*p[0] - s3*p[1] + 2*s3*p[2] +    0*p[3]
+    z = -s3*p[0] - s3*p[1] -   s3*p[2] + 3*s6*p[3]
+    return x, y, z
+
+def add_perpendicular_crosses_3d(ax, x1, y1, z1, x2, y2, z2, tick_length=0.03):
+    num_ticks = 6  # Number of ticks
+    for i in range(num_ticks):
+        t = i / (num_ticks - 1)
+        
+        # Interpolation point (x, y, z) on the line
+        x_tick = x1 + t * (x2 - x1)
+        y_tick = y1 + t * (y2 - y1)
+        z_tick = z1 + t * (z2 - z1)
+        
+        # Vector along the line (direction of the line)
+        line_vec = np.array([x2 - x1, y2 - y1, z2 - z1])
+        
+        # First perpendicular vector (cross product with z-axis)
+        perp_vec1 = np.cross(line_vec, [0, 0, 1])
+        length1 = np.linalg.norm(perp_vec1)
+        if length1 == 0:  # Prevent division by zero (in rare cases when parallel to z-axis)
+            perp_vec1 = np.cross(line_vec, [1, 0, 0])  # Cross with x-axis instead
+            length1 = np.linalg.norm(perp_vec1)
+        perp_vec1 /= length1  # Normalize
+        
+        # Second perpendicular vector (cross product with line_vec and perp_vec1)
+        perp_vec2 = np.cross(line_vec, perp_vec1)
+        perp_vec2 /= np.linalg.norm(perp_vec2)  # Normalize
+        
+        # Scale the perpendicular vectors by tick length
+        perp_vec1 *= tick_length
+        perp_vec2 *= tick_length
+        
+        # Draw the cross (two perpendicular lines)
+        ax.plot([x_tick - perp_vec1[0], x_tick + perp_vec1[0]],
+                [y_tick - perp_vec1[1], y_tick + perp_vec1[1]],
+                [z_tick - perp_vec1[2], z_tick + perp_vec1[2]], color='gray', linewidth=0.8)
+        
+        ax.plot([x_tick - perp_vec2[0], x_tick + perp_vec2[0]],
+                [y_tick - perp_vec2[1], y_tick + perp_vec2[1]],
+                [z_tick - perp_vec2[2], z_tick + perp_vec2[2]], color='gray', linewidth=0.8)
+        
+        ax.text(x_tick, y_tick, z_tick, f'{int(100 - t * 100)}%', fontsize=6, ha='right', va='bottom')

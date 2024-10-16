@@ -1,7 +1,7 @@
 import argparse
 
 from lyscripts import RichDefaultHelpFormatter, exit_cli
-from lyscripts.plot import corner, histograms, thermo_int
+from lyscripts.plot import corner, histograms, thermo_int, mixture_plot
 
 # I need another __main__ guard here, because otherwise pdoc tries to run this
 if __name__ == "__main__":
@@ -18,6 +18,7 @@ if __name__ == "__main__":
     corner._add_parser(subparsers, help_formatter=parser.formatter_class)
     histograms._add_parser(subparsers, help_formatter=parser.formatter_class)
     thermo_int._add_parser(subparsers, help_formatter=parser.formatter_class)
+    mixture_plot._add_parser(subparsers, help_formatter=parser.formatter_class)
 
     args = parser.parse_args()
     args.run_main(args)

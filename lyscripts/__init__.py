@@ -13,7 +13,7 @@ import pandas as pd
 import rich
 from rich_argparse import RichHelpFormatter
 
-from lyscripts import app, compute, data, evaluate, plot, mixture_fit, temp_schedule
+from lyscripts import plot, app, compute, data, evaluate, mixture_fit, temp_schedule
 from lyscripts._version import version
 from lyscripts.utils import CustomRichHandler, console
 

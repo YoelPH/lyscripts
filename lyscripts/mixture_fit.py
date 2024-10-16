@@ -151,16 +151,17 @@ def main(args: argparse.Namespace) -> None:
     starting_values = {k: rng.uniform() for k in MIXTURE.get_params()}
     MIXTURE.set_params(**starting_values)
     MIXTURE.normalize_mixture_coefs()
-    tolerance = params['model'].get('lihelihood_tolerance', 0.01)
+    tolerance = params['model'].get('likelihood_tolerance', 0.01)
     params_history, likelihood_history = run_EM(tolerance = tolerance)    
     
-    if args.history is not None:
-        logger.info(f"Saving history to {args.history_dir}.")
-        likelihood_history = pd.DataFrame(likelihood_history)
-        likelihood_history.to_csv(args.history_dir + '/llh', index=True)
-        params_history = pd.DataFrame(params_history)
-        params_history.to_csv(args.history_dir + '/params', index=True)
-
+    history_dir = params['general']['history_dir']
+    logger.info(f"Saving history to {history_dir}.")
+    llh_history = pd.DataFrame(likelihood_history)
+    llh_history.columns = ['likelihoods']
+    llh_history.to_csv(history_dir + '/llh.csv', index=False)
+    param_history = pd.DataFrame(params_history)
+    param_history.to_csv(history_dir + '/params.csv', index=False)
+    MIXTURE.get_mixture_coefs().to_csv(history_dir + '/mixture_coef.csv', index=False)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
