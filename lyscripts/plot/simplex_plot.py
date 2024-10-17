@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 
-from lyscripts.plot.utils import COLORS, save_figure, p_to_xyz, add_perpendicular_crosses_3d
+from lyscripts.plot.utils import COLORS, SUBSITE_COLORS, save_figure, p_to_xyz, add_perpendicular_crosses_3d
 from lyscripts.utils import load_yaml_params
 
 logger = logging.getLogger(__name__)
@@ -41,92 +41,223 @@ def _add_arguments(parser: argparse.ArgumentParser):
         "-p", "--params", default="./params.yaml", type=Path,
         help="Path to parameter file."
     )
-
     parser.set_defaults(run_main=main)
 
-def plot_3d_simplex(mixture_df, data):
+
+"""
+Visualize the component assignments of the trained mixture model.
+"""
+import argparse
+from pathlib import Path
+from matplotlib.ticker import StrMethodFormatter
+import numpy as np
+import yaml
+
+import h5py
+import matplotlib.pyplot as plt
+from tueplots import figsizes, fontsizes
+from lyscripts.plot.utils import COLORS as USZ
+
+from helpers import generate_location_colors
+
+
+def create_parser() -> argparse.ArgumentParser:
+    """Assemble the parser for the command line arguments."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "-m", "--model", type=Path, default="models/mixture.hdf5",
+        help=(
+            "Path to the model HDF5 file. Needs to contain a dataset called "
+            "``em/cluster_assignments``."
+        )
+    )
+    parser.add_argument(
+        "-o", "--output", type=Path, default="figures/cluster_assignments.png",
+        help="Path to the output file.",
+    )
+    parser.add_argument(
+        "-p", "--params", type=Path, default="_variables.yml",
+        help="Path to the parameter file..",
+    )
+    return parser
+
+
+def plot_2d_simplex(mixture_df, data):
+    _, bottom_ax = plt.subplots()
     subsites = list(mixture_df.columns)
-    simplex_matrix = np.zeros((len(subsites), 3))
-    for index, subsite in enumerate(subsites):
-        simplex_matrix[index] = p_to_xyz(mixture_df[subsite])
+    cluster_x = mixture_df.loc[0]
+    cluster_y = [0. for _ in subsites]
+    annotations = [f"{label}\n({num})" for label, num in num_patients.items()]
+    bottom_ax.scatter(
+        cluster_x, cluster_y,
+        s=[num for num in num_patients.values()],
+        c=list(generate_location_colors(subsites)),
+        alpha=0.7,
+        linewidths=0.,
+        zorder=10,
+    )
+
+    sorted_idx = cluster_components.argsort()
+    sorted_x = cluster_components[sorted_idx]
+    sorted_annotations = [annotations[i] for i in sorted_idx]
+    sorted_num = [list(num_patients.values())[i] for i in sorted_idx]
+    for i, (x, num, annotation) in enumerate(zip(sorted_x, sorted_num, sorted_annotations)):
+        bottom_ax.annotate(
+            annotation,
+            # sqrt, because marker's area grows linearly with patient num, not radius
+            xy=(x, np.sqrt(0.0000003 * num) * (- 1)**i),
+            xytext=(x, 0.025 * (- 1)**i),
+            ha="center",
+            va="bottom" if i % 2 == 0 else "top",
+            fontsize="small",
+            arrowprops={
+                "arrowstyle": "-",
+                "color": USZ["gray"],
+                "linewidth": 1.,
+            }
+        )
+
+    bottom_ax.set_xlabel("assignment to component A")
+    bottom_ax.xaxis.set_major_formatter(StrMethodFormatter("{x:.0%}"))
+    top_ax = bottom_ax.secondary_xaxis(
+        location="top",
+        functions=(lambda x: 1. - x, lambda x: 1. - x),
+    )
+    top_ax.set_xlabel("assignment to component B")
+    top_ax.xaxis.set_major_formatter(StrMethodFormatter("{x:.0%}"))
+    bottom_ax.set_yticks([])
+    bottom_ax.grid(axis="x", alpha=0.5, color=USZ["gray"], linestyle=":")
+    plt.savefig(args.output, bbox_inches="tight", dpi=300)
+
+# Function to add perpendicular ticks as short lines
+def add_perpendicular_ticks(x1, y1, x2, y2, tick_length=0.01):
+    num_ticks = 6  # Number of ticks including 0% and 100%
+    for i in range(num_ticks):
+        t = i / (num_ticks - 1)
+        x_tick = x1 + t * (x2 - x1)
+        y_tick = y1 + t * (y2 - y1)
+        
+        # Vector along the line
+        dx = x2 - x1
+        dy = y2 - y1
+        
+        # Perpendicular vector
+        perp_dx = -dy
+        perp_dy = dx
+        
+        # Normalize the perpendicular vector
+        length = np.sqrt(perp_dx**2 + perp_dy**2)
+        perp_dx /= length
+        perp_dy /= length
+        
+        # Draw tick as a short perpendicular line
+        plt.plot([x_tick - tick_length * perp_dx, x_tick + tick_length * perp_dx], [y_tick - tick_length * perp_dy, y_tick + tick_length * perp_dy], color='gray', linewidth=0.8)
+        plt.text(x_tick, y_tick, f'{int(100 - t * 100)}%', fontsize=8, ha='right', va='bottom')
+
+def plot_3d_simplex(mixture_df, data, component_names = False):
+    subsites = list(mixture_df.columns)
+    colors_ordered = [SUBSITE_COLORS[subsite] for subsite in subsites]
+
+    # Define the plane's normal vector
+    normal_vector = np.array([1,1,1])/np.sqrt(3)
+
+    v1 = np.array([1,-1,0])/np.sqrt(2)
+
+    # Calculate the second orthogonal vector using the cross product
+    v2 = np.cross(normal_vector, v1) *-1
+
+    # Project the point onto the new coordinate system
+    origin = np.array([0, 1, 0])
+    x_origin =  origin @ v1
+    y_origin = origin @ v2
+
+    x_vals = mixture_df.T @ v1 - x_origin
+    y_vals = mixture_df.T @ v2 - y_origin
+
+    extremes = np.array([[1,0,0],
+                        [0,1,0],
+                        [0,0,1]])
+    extremes_x = extremes @ v1 - x_origin
+    extremes_y = extremes @ v2 - y_origin
+
+    # Plot the point in 2D
+    import matplotlib.pyplot as plt
+
     odered_value_counts = data['tumor']['1']['subsite'].value_counts()[subsites]
     sizes = odered_value_counts * 3
 
-    # Sizes for each point
-    ordered_value_counts = data['tumor']['1']['subsite'].value_counts()[subsites]
-    sizes = np.array(ordered_value_counts) * 1  # Adjust the scaling if necessary
+    fig, ax = plt.subplots(figsize=(8, 6.8))
 
-    # Create a 3D plot
-    fig = plt.figure(figsize=(10, 10))
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Extract coordinates from simplex_matrix
-    x_coords = simplex_matrix[:, 0]
-    y_coords = simplex_matrix[:, 1]
-    z_coords = simplex_matrix[:, 2]
-
-    # Scatter plot with specific colors and sizes
-    scatter = ax.scatter(x_coords, y_coords, z_coords, c=colors_ordered, s=sizes, marker='o')
-
-    # Add text labels for each subsite
-    for i, subsite in enumerate(subsites):
-        ax.text(x_coords[i], y_coords[i], z_coords[i], subsite)
-        x_extremes = [-1,1,0,0]
-        y_extremes = [-0.5773502691896258,-0.5773502691896258,1.1547005383792517,0]
-        z_extremes = [-0.5773502691896258,-0.5773502691896258,-0.5773502691896258,1.2247448713915892]
-    plotter_x = x_extremes.copy()
-    plotter_x.append(x_extremes[0])
-    plotter_x.append(x_extremes[2])
-    plotter_y = y_extremes.copy()
-    plotter_y.append(y_extremes[0])
-    plotter_y.append(y_extremes[2])
-    plotter_z = z_extremes.copy()
-    plotter_z.append(z_extremes[0])
-    plotter_z.append(z_extremes[2])
-
-    ax.plot(plotter_x, plotter_y,plotter_z, c='k')
-    ax.plot([x_extremes[1],x_extremes[3]], [y_extremes[1],y_extremes[3]],[z_extremes[1],z_extremes[3]], c='k')
-    extremes = np.array((x_extremes,y_extremes,z_extremes)).T
-    center0 = (extremes[1]+extremes[2]+extremes[3])/3
-    center1 = (extremes[0]+extremes[2]+extremes[3])/3
-    center2 = (extremes[0]+extremes[1]+extremes[3])/3
-    center3 = (extremes[0]+extremes[1]+extremes[2])/3
-
-    component_larynx = mixture.get_mixture_coefs()['C32.0'].argmax()
-    component_oropharynx = mixture.get_mixture_coefs()['C01'].argmax()
-    component_oral_cavity = mixture.get_mixture_coefs()['C03'].argmax()
-    component_hypopharynx = mixture.get_mixture_coefs()['C13'].argmax()
-
-    ax.text(extremes[component_larynx,0], extremes[component_larynx,1], extremes[component_larynx,2], "Larynx like", fontsize=10, ha='right', va='top',c = usz_orange)
-    ax.text(extremes[component_oropharynx,0], extremes[component_oropharynx,1], extremes[component_oropharynx,2], "Oropharynx like", fontsize=10, ha='left', va='top',c = usz_green)
-    ax.text(extremes[component_oral_cavity,0], extremes[component_oral_cavity,1], extremes[component_oral_cavity,2], "Oral cavity like", fontsize=10, ha='left', va='top',c = usz_blue)
-    ax.text(extremes[component_hypopharynx,0], extremes[component_hypopharynx,1], extremes[component_hypopharynx,2], "Hypopharynx like", fontsize=10, ha='left', va='top',c = usz_red)
-
-
-
-    add_perpendicular_crosses_3d(ax, extremes[0, 0], extremes[0, 1], extremes[0, 2], center0[0], center0[1], center0[2])
-    plt.plot([extremes[0,0], center0[0]], [extremes[0,1], center0[1]],[extremes[0,2],center0[2]], color='gray', linestyle='--', linewidth=1)
-    add_perpendicular_crosses_3d(ax, extremes[1, 0], extremes[1, 1], extremes[1, 2], center1[0], center1[1], center1[2])
-    plt.plot([extremes[1,0], center1[0]], [extremes[1,1], center1[1]],[extremes[1,2],center1[2]], color='gray', linestyle='--', linewidth=1)
-    add_perpendicular_crosses_3d(ax, extremes[2, 0], extremes[2, 1], extremes[2, 2], center2[0], center2[1], center2[2])
-    plt.plot([extremes[2,0], center2[0]], [extremes[2,1], center2[1]],[extremes[2,2],center2[2]], color='gray', linestyle='--', linewidth=1)
-    add_perpendicular_crosses_3d(ax, extremes[3, 0], extremes[3, 1], extremes[3, 2], center3[0], center3[1], center3[2])
-    plt.plot([extremes[3,0], center3[0]], [extremes[3,1], center3[1]],[extremes[3,2],center3[2]], color='gray', linestyle='--', linewidth=1)
+    # Plot the points with varying sizes and colors
+    for i in range(len(x_vals)):
+        ax.scatter(x_vals[i], y_vals[i], s=sizes[i], color=colors_ordered[i], label=subsites[i])
+        ax.text(x_vals[i], y_vals[i], subsites[i], fontsize=9, ha='center', va='center')
 
     legend_text = []
     for index in range(len(subsites)):
         legend_text.append(subsites[index] + ', ' + str(odered_value_counts[index]) + ' patients')
 
-    legend_elements = [Line2D([0], [0], marker='o', color='w', markerfacecolor=color, markersize=10, label=text)
-                    for color, text in zip(colors_ordered, legend_text)]
+    legend_elements = [Line2D([0], [0], marker='o', color='w', markerfacecolor=color, markersize=10, label=subsite)
+                    for color, subsite in zip(colors_ordered, legend_text)]
 
     # Add a legend with fixed dot sizes
-    # plt.legend(handles=legend_elements, loc='upper right', title='Subsites', fontsize='small')
+    ax.legend(handles=legend_elements, loc='upper right', title='Subsites', fontsize='small')
 
-    plt.gca().set_axis_off()
-    plt.show()
+    # Connect the points
+    ax.plot(extremes_x, extremes_y, color='black', alpha=0.5)
 
+    # Close the triangle by connecting the last point to the first
+    ax.plot([extremes_x[-1], extremes_x[0]], [extremes_y[-1], extremes_y[0]], color='black', alpha=0.5)
 
+    # Calculate midpoints of each side of the triangle
+    midpoints_x = (extremes_x[0] + extremes_x[1]) / 2, (extremes_x[1] + extremes_x[2]) / 2, (extremes_x[2] + extremes_x[0]) / 2
+    midpoints_y = (extremes_y[0] + extremes_y[1]) / 2, (extremes_y[1] + extremes_y[2]) / 2, (extremes_y[2] + extremes_y[0]) / 2
+
+    # Draw lines from each vertex to the midpoint of the opposite side
+    ax.plot([extremes_x[0], midpoints_x[1]], [extremes_y[0], midpoints_y[1]], color='gray', linestyle='--', linewidth=1)
+    ax.plot([extremes_x[1], midpoints_x[2]], [extremes_y[1], midpoints_y[2]], color='gray', linestyle='--', linewidth=1)
+    ax.plot([extremes_x[2], midpoints_x[0]], [extremes_y[2], midpoints_y[0]], color='gray', linestyle='--', linewidth=1)
+
+    # Add perpendicular ticks to each line with adjusted length
+    add_perpendicular_ticks(extremes_x[0], extremes_y[0], midpoints_x[1], midpoints_y[1], ax=ax)
+    add_perpendicular_ticks(extremes_x[1], extremes_y[1], midpoints_x[2], midpoints_y[2], ax=ax)
+    add_perpendicular_ticks(extremes_x[2], extremes_y[2], midpoints_x[0], midpoints_y[0], ax=ax)
+
+    # Scaling factor to move the text farther from the vertices
+    scaling_factor = 1.1
+
+    # Calculate the centroid of the triangle
+    centroid_x = np.mean(extremes_x)
+    centroid_y = np.mean(extremes_y)
+
+    # Scale the label positions away from the centroid
+    scaled_extremes_x = centroid_x + scaling_factor * (extremes_x - centroid_x)
+    scaled_extremes_y = centroid_y + scaling_factor * (extremes_y - centroid_y)
+
+    if component_names:
+        # Plot the text labels farther away from the triangle
+        if 'C32.0' in subsites:
+            component_larynx = mixture_df['C32.0'].argmax()
+            ax.text(scaled_extremes_x[component_larynx], scaled_extremes_y[component_larynx], "Larynx like", 
+                    fontsize=10, ha='right', va='top', c=COLORS['orange'])
+
+        if 'C01' in subsites:
+            component_oropharynx = mixture_df['C01'].argmax()
+            ax.text(scaled_extremes_x[component_oropharynx], scaled_extremes_y[component_oropharynx], "Oropharynx like", 
+                    fontsize=10, ha='left', va='top', c=COLORS['green'])
+
+        if 'C03' in subsites:
+            component_oral_cavity = mixture_df['C03'].argmax()
+            ax.text(scaled_extremes_x[component_oral_cavity], scaled_extremes_y[component_oral_cavity], "Oral cavity like", 
+                    fontsize=10, ha='left', va='top', c=COLORS['blue'])
+
+        if 'C13' in subsites:
+            component_hypopharynx = mixture_df['C13'].argmax()
+            ax.text(scaled_extremes_x[component_hypopharynx], scaled_extremes_y[component_hypopharynx], "Hypopharynx like", 
+                    fontsize=10, ha='left', va='top', c=COLORS['red'])
+
+    save_figure(args.output, fig, formats=["png", "svg"])
+    logger.info(f"Simplex plot saved")
 
 def main(args: argparse.Namespace):
     mixture_df = pd.read_csv(args.input)
@@ -134,7 +265,7 @@ def main(args: argparse.Namespace):
     params = load_yaml_params(args.params)
     data = params['general']['data']
     if nr_components == 2:
-        plot_2d_simplex()
+        plot_2d_simplex(mixture_df, data)
     elif nr_components == 3:
         plot_3d_simplex(mixture_df, data)
     else:

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import h5py
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 import scipy as sp
 import math
@@ -35,6 +36,31 @@ COLORS = {
 }
 COLOR_CYCLE = cycle(COLORS.values())
 CM_PER_INCH = 2.54
+blue_to_white = LinearSegmentedColormap.from_list("blue to white", 
+                                                   [COLORS['blue'], "#ffffff"], 
+                                                   N=256)
+green_to_white = LinearSegmentedColormap.from_list("green_to_white", 
+                                                   [COLORS['green'], "#ffffff"], 
+                                                   N=256)
+red_to_white   = LinearSegmentedColormap.from_list("red_to_white", 
+                                                   [COLORS['red'], "#ffffff"], 
+                                                   N=256)
+orange_to_white   = LinearSegmentedColormap.from_list("orange_to_white", 
+                                                   [COLORS['orange'], "#ffffff"], 
+                                                   N=256)
+SUBSITE_COLORS = {'C03': blue_to_white(0), 
+                  'C04':blue_to_white(0.15), 
+                  'C06':blue_to_white(0.3),
+                  'C02':blue_to_white(0.45), 
+                  'C05':blue_to_white(0.6), 
+                  'C10':green_to_white(0), 
+                  'C09':green_to_white(0.3),
+                  'C01':green_to_white(0.6),
+                  'C12':red_to_white(0),
+                  'C13':red_to_white(0.5), 
+                  'C32.1':orange_to_white(0),
+                  'C32.2':orange_to_white(0.3), 
+                  'C32.0':orange_to_white(0.6)}
 
 
 def floor_at_decimal(value: float, decimal: int) -> float:
